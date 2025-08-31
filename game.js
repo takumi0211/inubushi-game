@@ -18,6 +18,8 @@
 
   let width = 0;
   let height = 0;
+  let uiScale = 1;
+  let worldScale = 1;
   function resize() {
     const w = Math.floor(window.innerWidth);
     const h = Math.floor(window.innerHeight);
@@ -27,9 +29,18 @@
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // scales
+    const minDim = Math.min(width, height);
+    uiScale = clamp(minDim / 800, 0.85, 1.25);
+    worldScale = clamp(minDim / 900, 0.9, 1.35);
+    document.documentElement.style.setProperty('--ui', uiScale.toFixed(3));
+    // adjust joystick sensitivity with UI scale
+    joyMax = 38 * uiScale;
+    // update player scaled params
+    player.r = 10 * worldScale;
+    player.speed = 230 * worldScale;
   }
   window.addEventListener('resize', resize);
-  resize();
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -66,13 +77,13 @@
     return { x: r.left + r.width / 2, y: r.top + r.height / 2, r };
   };
   const joyPointer = { id: null };
-  const joyMax = 38;
+  let joyMax = 38;
   function setStick(dx, dy) {
     const mag = Math.hypot(dx, dy);
     const clamped = mag > joyMax ? joyMax / mag : 1;
-    stick.style.transform = `translate(calc(-50% + ${dx * clamped}px), calc(-50% + ${dy * clamped}px))`;
-    joyState.dx = (dx / joyMax);
-    joyState.dy = (dy / joyMax);
+      stick.style.transform = `translate(calc(-50% + ${dx * clamped}px), calc(-50% + ${dy * clamped}px))`;
+      joyState.dx = (dx / joyMax);
+      joyState.dy = (dy / joyMax);
   }
   function resetStick() {
     joyState.active = false;
@@ -126,6 +137,8 @@
     speed: 230, // px/sec
     color: '#25d8ff',
   };
+  // After player exists, compute initial layout/scales
+  resize();
 
   const bullets = [];
   function chooseEnemyKind(d) {
@@ -162,26 +175,26 @@
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len; const uy = dy / len;
 
-    const baseSpeed = 100 + 170 * d + Math.random() * 20;
+    const baseSpeed = (100 + 170 * d + Math.random() * 20) * worldScale;
     const kind = chooseEnemyKind(d);
     if (kind === 'bolt') {
-      bullets.push({ kind, x, y, r: 5, vx: ux * baseSpeed, vy: uy * baseSpeed, color: '#3cff4e' });
+      bullets.push({ kind, x, y, r: 5 * worldScale, vx: ux * baseSpeed, vy: uy * baseSpeed, color: '#3cff4e' });
     } else if (kind === 'zigzag') {
       const speed = baseSpeed * 0.95;
       const perpX = -uy; const perpY = ux;
-      const amp = 18 + 22 * d;
+      const amp = (18 + 22 * d) * worldScale;
       const freq = 3 + 2 * d;
-      bullets.push({ kind, x, y, r: 5, vx: ux * speed, vy: uy * speed, px: perpX, py: perpY, amp, phase: 0, prevSin: 0, freq, color: '#00e1ff' });
+      bullets.push({ kind, x, y, r: 5 * worldScale, vx: ux * speed, vy: uy * speed, px: perpX, py: perpY, amp, phase: 0, prevSin: 0, freq, color: '#00e1ff' });
     } else if (kind === 'seeker') {
-      const max = 90 + 110 * d;      // lower top speed
-      const start = max * 0.5;       // slower initial velocity
-      const accel = 120 + 100 * d;   // gentler steering strength
-      bullets.push({ kind, x, y, r: 5, vx: ux * start, vy: uy * start, max, accel, color: '#ff72e0' });
+      const max = (90 + 110 * d) * worldScale;      // lower top speed
+      const start = max * 0.5;                      // slower initial velocity
+      const accel = (120 + 100 * d) * worldScale;   // gentler steering strength
+      bullets.push({ kind, x, y, r: 5 * worldScale, vx: ux * start, vy: uy * start, max, accel, color: '#ff72e0' });
     } else { // bouncer
       const speed = baseSpeed * 0.85;
       const bounces = 2 + Math.floor(3 * d);
       const ttl = 6 + 3 * d;
-      bullets.push({ kind: 'bouncer', x, y, r: 6, vx: ux * speed, vy: uy * speed, bounces, ttl, color: '#ffd166' });
+      bullets.push({ kind: 'bouncer', x, y, r: 6 * worldScale, vx: ux * speed, vy: uy * speed, bounces, ttl, color: '#ffd166' });
     }
   }
 
@@ -190,9 +203,9 @@
   function spawnBeam(t) {
     // Horizontal or vertical sweep
     const vertical = Math.random() < 0.5;
-    const thickness = 10 + Math.random() * 20;
-    const speed = 160 + Math.min(240, t * 5);
-    const safeGap = 120 + Math.random() * 80;
+    const thickness = (10 + Math.random() * 20) * worldScale;
+    const speed = (160 + Math.min(240, t * 5)) * worldScale;
+    const safeGap = (120 + Math.random() * 80) * worldScale;
     if (vertical) {
       const fromLeft = Math.random() < 0.5;
       const x = fromLeft ? -thickness : width + thickness;
@@ -252,7 +265,7 @@
     // 20% bomb, others distributed: shield 30%, bazooka 25%, slow 15%, magnet 10%
     const r = Math.random();
     const type = r < 0.2 ? 'bomb' : r < 0.5 ? 'shield' : r < 0.75 ? 'bazooka' : r < 0.9 ? 'slow' : 'magnet';
-    powerups.push({ x, y, r: 12, type, ttl: 12, phase: Math.random() * Math.PI * 2 });
+    powerups.push({ x, y, r: 12 * worldScale, type, ttl: 12, phase: Math.random() * Math.PI * 2 });
   }
 
   function collectPowerup(p) {
@@ -273,7 +286,7 @@
       beams.length = 0;
     }
     // pickup flash
-    effects.push({ kind: 'burst', x: p.x, y: p.y, ttl: 0.25, r: 12 });
+    effects.push({ kind: 'burst', x: p.x, y: p.y, ttl: 0.25, r: 12 * worldScale });
   }
 
   function fireRocket() {
@@ -281,8 +294,8 @@
     bazookaAmmo -= 1;
     ammoEl.textContent = String(bazookaAmmo);
     const ang = lastMoveAngle; // shoot forward
-    const speed = 520;
-    rockets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, r: 6, ttl: 1.2 });
+    const speed = 520 * worldScale;
+    rockets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, r: 6 * worldScale, ttl: 1.2 });
   }
 
   function reset() {
@@ -553,7 +566,7 @@
   }
 
   // --- Space opera styling additions ---
-  // Starfield
+  // Starfield background
   const stars = [];
   function initStars() {
     stars.length = 0;
@@ -602,7 +615,7 @@
     ctx.fill();
     ctx.stroke();
 
-    // Wings (s‑foil like)
+    // Wings
     ctx.fillStyle = '#9dd2ff';
     ctx.strokeStyle = '#5aa6d1';
     ctx.beginPath();
@@ -681,12 +694,12 @@
     // Player starfighter
     drawShip(player.x, player.y, lastMoveAngle);
 
-    // Shield aura (stronger & clearer)
+    // Shield aura (clear cyan)
     if (hasShield()) {
       const left = Math.max(0, shieldUntil - time);
       const pulse = 0.4 + 0.6 * Math.sin((left * 8) + player.x * 0.01);
-      const outer = player.r + 12 + pulse * 3;
-      const inner = player.r + 6;
+      const outer = player.r + (12 * worldScale) + pulse * (3 * worldScale);
+      const inner = player.r + (6 * worldScale);
       // Outer glow
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
