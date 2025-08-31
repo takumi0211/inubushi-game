@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Galactic Dodge - 回避ゲーム</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <div class="stat"><span>TIME</span><strong id="time">0.0</strong></div>
+      <div class="stat"><span>BEST</span><strong id="best">0.0</strong></div>
+      <div class="stat"><span>AMMO</span><strong id="ammo">0</strong></div>
+      <div class="stat"><span>SHIELD</span><strong id="shieldLeft">-</strong></div>
+    </div>
+
+    <div id="overlay" class="show">
+      <div class="panel">
+        <h1>Galactic Dodge</h1>
+        <p class="sub">宇宙戦闘の雰囲気で、レーザーとビームを回避！</p>
+        <ul class="tips">
+          <li>移動: WASD / 矢印キー</li>
+          <li>攻撃（バズーカ）: スペース</li>
+          <li>モバイル: 左下スティック + 右下FIREボタン</li>
+          <li>一時停止: P</li>
+          <li>パワーアップ: 青=3秒無敵, 橙=バズーカ, 紫=スロー, 緑=マグネット, 桃=ボム</li>
+        </ul>
+        <button id="startBtn">ゲーム開始</button>
+      </div>
+    </div>
+
+    <div id="joystick">
+      <div id="stick"></div>
+    </div>
+
+    <button id="fireBtn" aria-label="Fire">FIRE</button>
+
+    <script src="game.js"></script>
+  </body>
+  </html>
