@@ -62,28 +62,13 @@ body {
   appearance: none;
   border: none;
   border-radius: 10px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   font-weight: 600;
   background: linear-gradient(180deg, #3ce6ff, #0bd3ff);
   color: #06202c;
   cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  min-height: 44px;
-  min-width: 44px;
-  font-size: 16px;
 }
 .panel button:hover { filter: brightness(0.98); }
-.panel button:active { 
-  filter: brightness(0.95); 
-  transform: translateY(1px);
-}
-.panel button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
 
 /* Simple mobile joystick */
 #joystick {
