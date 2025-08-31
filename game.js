@@ -7,8 +7,12 @@
   const bestEl = document.getElementById('best');
   const ammoEl = document.getElementById('ammo');
   const shieldLeftEl = document.getElementById('shieldLeft');
+  const modeEl = document.getElementById('mode');
+  const levelEl = document.getElementById('level');
   const overlay = document.getElementById('overlay');
   const startBtn = document.getElementById('startBtn');
+  const startSurvivalBtn = document.getElementById('startSurvival');
+  const startStagesBtn = document.getElementById('startStages');
 
   // Simple mobile joystick
   const joystick = document.getElementById('joystick');
@@ -20,6 +24,20 @@
   let height = 0;
   let uiScale = 1;
   let worldScale = 1;
+  // Screen shake state
+  const shake = { t: 0, p: 0, dx: 0, dy: 0 };
+  function addShake(power = 6) {
+    shake.t = Math.max(shake.t, 0.22);
+    shake.p = Math.max(shake.p, power);
+  }
+  function stepShake(dt) {
+    if (shake.t <= 0) { shake.dx = shake.dy = 0; return; }
+    shake.t = Math.max(0, shake.t - dt);
+    const k = (shake.t / 0.22);
+    const mag = shake.p * k * k;
+    shake.dx = (Math.random() * 2 - 1) * mag;
+    shake.dy = (Math.random() * 2 - 1) * mag;
+  }
   function resize() {
     const w = Math.floor(window.innerWidth);
     const h = Math.floor(window.innerHeight);
@@ -126,9 +144,12 @@
   joystick.addEventListener('touchmove', (e) => { e.preventDefault(); handleJoyMove(e); }, { passive: false });
   joystick.addEventListener('touchend', (e) => { e.preventDefault(); handleJoyEnd(e); }, { passive: false });
 
-  startBtn.addEventListener('click', () => startGame());
+  startBtn?.addEventListener('click', () => startSurvival());
+  startSurvivalBtn?.addEventListener('click', () => startSurvival());
+  startStagesBtn?.addEventListener('click', () => showStageSelect());
+  // Disable background click-to-start to avoid accidental starts
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) startGame();
+    // no-op; use buttons to start
   });
 
   // Entities
@@ -176,26 +197,40 @@
     const ux = dx / len; const uy = dy / len;
 
     const baseSpeed = (100 + 170 * d + Math.random() * 20) * worldScale;
-    const kind = chooseEnemyKind(d);
+    const kind = (mode === Mode.Stages)
+      ? chooseEnemyKindStage(currentWeights)
+      : chooseEnemyKind(d);
     if (kind === 'bolt') {
-      bullets.push({ kind, x, y, r: 5 * worldScale, vx: ux * baseSpeed, vy: uy * baseSpeed, color: '#3cff4e' });
+      bullets.push({ kind, x, y, lx: x, ly: y, r: 5 * worldScale, vx: ux * baseSpeed, vy: uy * baseSpeed, color: '#3cff4e' });
     } else if (kind === 'zigzag') {
       const speed = baseSpeed * 0.95;
       const perpX = -uy; const perpY = ux;
       const amp = (18 + 22 * d) * worldScale;
       const freq = 3 + 2 * d;
-      bullets.push({ kind, x, y, r: 5 * worldScale, vx: ux * speed, vy: uy * speed, px: perpX, py: perpY, amp, phase: 0, prevSin: 0, freq, color: '#00e1ff' });
+      bullets.push({ kind, x, y, lx: x, ly: y, r: 5 * worldScale, vx: ux * speed, vy: uy * speed, px: perpX, py: perpY, amp, phase: 0, prevSin: 0, freq, color: '#00e1ff' });
     } else if (kind === 'seeker') {
       const max = (90 + 110 * d) * worldScale;      // lower top speed
       const start = max * 0.5;                      // slower initial velocity
       const accel = (120 + 100 * d) * worldScale;   // gentler steering strength
-      bullets.push({ kind, x, y, r: 5 * worldScale, vx: ux * start, vy: uy * start, max, accel, color: '#ff72e0' });
-    } else { // bouncer
+      bullets.push({ kind, x, y, lx: x, ly: y, r: 5 * worldScale, vx: ux * start, vy: uy * start, max, accel, color: '#ff72e0' });
+    } else if (kind === 'bouncer') {
       const speed = baseSpeed * 0.85;
       const bounces = 2 + Math.floor(3 * d);
       const ttl = 6 + 3 * d;
-      bullets.push({ kind: 'bouncer', x, y, r: 6 * worldScale, vx: ux * speed, vy: uy * speed, bounces, ttl, color: '#ffd166' });
+      bullets.push({ kind: 'bouncer', x, y, lx: x, ly: y, r: 6 * worldScale, vx: ux * speed, vy: uy * speed, bounces, ttl, color: '#ffd166' });
+    } else if (kind === 'splitter') {
+      const speed = baseSpeed * 0.9;
+      bullets.push({ kind: 'splitter', x, y, lx: x, ly: y, r: 5 * worldScale, vx: ux * speed, vy: uy * speed, t: 0, split: 0.9 + Math.random() * 0.4, spread: 0.38, color: '#ffa600' });
     }
+  }
+
+  function chooseEnemyKindStage(weights) {
+    const entries = Object.entries(weights).filter(([,v]) => v > 0);
+    let sum = entries.reduce((a, [,v]) => a + v, 0);
+    if (sum <= 0) return 'bolt';
+    let r = Math.random() * sum;
+    for (const [k, v] of entries) { r -= v; if (r <= 0) return k; }
+    return entries[0][0];
   }
 
   // Occasional sweeping laser-like wave (rectangles crossing screen)
@@ -238,10 +273,122 @@
   let spawnInterval = 0.95; // eased start, will scale down
   let beamTimer = 0;
   let beamInterval = 5.0; // eased start
-  let time = 0;
+  let time = 0;         // Survival timer (for scoring/difficulty)
+  let gameClock = 0;    // Always-running gameplay clock (for effects duration)
   let best = parseFloat(localStorage.getItem('dodge_highscore') || '0') || 0;
   bestEl.textContent = best.toFixed(1);
   let paused = false;
+
+  // Game modes
+  const Mode = { Survival: 'survival', Stages: 'stages' };
+  let mode = Mode.Survival;
+  let lastMode = Mode.Survival;
+  // Stages
+  const LEVELS = [
+    // 1: Bolt + Beams only
+    { duration: 20, spawn: 0.95, beam: 4.6, weights: { bolt: 1.0 } },
+    // 2: Add Zigzag (cyan)
+    { duration: 24, spawn: 0.85, beam: 4.2, weights: { bolt: 1.0, zigzag: 0.3 } },
+    // 3: Zigzag増量
+    { duration: 26, spawn: 0.78, beam: 3.9, weights: { bolt: 0.9, zigzag: 0.7 } },
+    // 4: Seeker解禁
+    { duration: 28, spawn: 0.7,  beam: 3.6, weights: { bolt: 0.8, zigzag: 0.8, seeker: 0.25 } },
+    // 5: Seeker強化
+    { duration: 30, spawn: 0.62, beam: 3.2, weights: { bolt: 0.7, zigzag: 0.9, seeker: 0.45 } },
+    // 6: Bouncer追加
+    { duration: 32, spawn: 0.56, beam: 3.0, weights: { bolt: 0.65, zigzag: 0.95, seeker: 0.5, bouncer: 0.2 } },
+    // 7: 全体強化
+    { duration: 34, spawn: 0.5,  beam: 2.8, weights: { bolt: 0.55, zigzag: 1.05, seeker: 0.6, bouncer: 0.35 } },
+    // 8: 新種（Splitter）追加
+    { duration: 36, spawn: 0.46, beam: 2.7, weights: { bolt: 0.5, zigzag: 1.0, seeker: 0.7, bouncer: 0.4, splitter: 0.4 } },
+    // 9: Splitter増量
+    { duration: 38, spawn: 0.42, beam: 2.6, weights: { bolt: 0.45, zigzag: 1.1, seeker: 0.8, bouncer: 0.45, splitter: 0.6 } },
+    // 10: Boss stage（特殊）
+    { duration: 999, spawn: 0.6, beam: 3.0, weights: { }, boss: true },
+  ];
+  let levelIndex = 0;
+  let stageTimer = 0;
+  let currentWeights = LEVELS[0].weights;
+  const PROGRESS_KEY = 'dodge_unlocked_levels';
+  let unlockedLevels = parseInt(localStorage.getItem(PROGRESS_KEY) || '1', 10);
+  if (!Number.isFinite(unlockedLevels) || unlockedLevels < 1) unlockedLevels = 1;
+
+  function setMode(m) {
+    mode = m; lastMode = m;
+    modeEl && (modeEl.textContent = m === Mode.Survival ? 'SURVIVAL' : 'STAGES');
+    if (m === Mode.Survival) {
+      bestEl.textContent = best.toFixed(1);
+      levelEl && (levelEl.textContent = '-');
+    } else {
+      bestEl.textContent = '-';
+      levelEl && (levelEl.textContent = String(levelIndex + 1));
+    }
+  }
+
+  function setLevel(i) {
+    levelIndex = clamp(i, 0, LEVELS.length - 1);
+    currentWeights = LEVELS[levelIndex].weights;
+    levelEl && (levelEl.textContent = String(levelIndex + 1));
+    spawnInterval = LEVELS[levelIndex].spawn;
+    beamInterval = LEVELS[levelIndex].beam;
+    stageTimer = 0;
+    // Boss stage setup
+    if (LEVELS[levelIndex].boss) {
+      bossStart();
+      // Give some initial rockets
+      bazookaAmmo = Math.max(bazookaAmmo, 4);
+      ammoEl.textContent = String(bazookaAmmo);
+    } else {
+      bossReset();
+    }
+  }
+
+  function showStageSelect() {
+    setMode(Mode.Stages);
+    const buttons = [];
+    for (let i = 0; i < LEVELS.length; i++) {
+      const unlocked = i < unlockedLevels;
+      const label = unlocked ? `Level ${i + 1}` : `Level ${i + 1} 🔒`;
+      buttons.push(`<button data-level="${i}" ${unlocked ? '' : 'disabled'}>${label}</button>`);
+    }
+    overlay.innerHTML = `<div class="panel">
+      <h1>Stage Select</h1>
+      <p class="sub">クリアしたレベルが解放されます</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">${buttons.join('')}</div>
+      <div style="margin-top:12px; display:flex; gap:10px;">
+        <button id="backMenu">戻る</button>
+      </div>
+    </div>`;
+    overlay.classList.add('show');
+    overlay.querySelectorAll('button[data-level]')?.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.getAttribute('data-level'), 10);
+        overlay.classList.remove('show');
+        state = State.Playing; reset(); setLevel(idx);
+      });
+    });
+    document.getElementById('backMenu')?.addEventListener('click', () => {
+      // return to root menu (survival/stages)
+      overlay.innerHTML = `
+        <div class="panel">
+          <h1>Galactic Dodge</h1>
+          <p class="sub">モードを選択:</p>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; margin:10px 0 14px;">
+            <button id="startSurvival">Survival（時間を競う）</button>
+            <button id="startStages">Stages（レベル制）</button>
+          </div>
+          <ul class="tips">
+            <li>移動: WASD / 矢印キー</li>
+            <li>攻撃（バズーカ）: スペース（モバイルは右下FIRE）</li>
+            <li>一時停止: P</li>
+            <li>パワーアップ: 青=無敵, 橙=バズーカ, 紫=スロー, 緑=マグネット, 桃=ボム</li>
+          </ul>`;
+      overlay.classList.add('show');
+      // rebind
+      document.getElementById('startSurvival')?.addEventListener('click', () => startSurvival());
+      document.getElementById('startStages')?.addEventListener('click', () => showStageSelect());
+    });
+  }
 
   // Power-ups and weapons
   const powerups = [];
@@ -249,13 +396,13 @@
   const effects = [];
   let powerTimer = 0;
   let powerInterval = 7.0;
-  let shieldUntil = 0; // measured in "time" seconds
+  let shieldUntil = 0; // measured in gameClock seconds
   let slowUntil = 0;
   let magnetUntil = 0;
   let bazookaAmmo = 0;
-  function hasShield() { return time < shieldUntil; }
-  function hasSlow() { return time < slowUntil; }
-  function hasMagnet() { return time < magnetUntil; }
+  function hasShield() { return gameClock < shieldUntil; }
+  function hasSlow() { return gameClock < slowUntil; }
+  function hasMagnet() { return gameClock < magnetUntil; }
   function enemyScale() { return hasSlow() ? 0.35 : 1; }
 
   function spawnPowerup() {
@@ -270,20 +417,21 @@
 
   function collectPowerup(p) {
     if (p.type === 'shield') {
-      shieldUntil = Math.max(time + 3.0, shieldUntil);
+      shieldUntil = Math.max(gameClock + 3.0, shieldUntil);
     } else if (p.type === 'bazooka') {
       bazookaAmmo += 2; // two rockets per pickup
       ammoEl.textContent = String(bazookaAmmo);
     } else if (p.type === 'slow') {
-      slowUntil = Math.max(time + 3.0, slowUntil);
+      slowUntil = Math.max(gameClock + 3.0, slowUntil);
     } else if (p.type === 'magnet') {
-      magnetUntil = Math.max(time + 10.0, magnetUntil);
+      magnetUntil = Math.max(gameClock + 10.0, magnetUntil);
     } else if (p.type === 'bomb') {
       // Full-field wipe
       const R = Math.max(width, height);
       effects.push({ kind: 'boom', x: player.x, y: player.y, ttl: 0.35, r: R });
       bullets.length = 0;
       beams.length = 0;
+      addShake(12);
     }
     // pickup flash
     effects.push({ kind: 'burst', x: p.x, y: p.y, ttl: 0.25, r: 12 * worldScale });
@@ -296,6 +444,14 @@
     const ang = lastMoveAngle; // shoot forward
     const speed = 520 * worldScale;
     rockets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, r: 6 * worldScale, ttl: 1.2 });
+  }
+
+  function spawnSparks(x, y, count = 14, color = 'rgba(255,200,150,1)') {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 120 + Math.random() * 220;
+      effects.push({ kind: 'spark', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, ttl: 0.35 + Math.random() * 0.15, life: 0.5, color });
+    }
   }
 
   function reset() {
@@ -322,24 +478,78 @@
     shieldLeftEl.textContent = '-';
   }
 
-  function startGame() {
+  function startSurvival() {
+    setMode(Mode.Survival);
     overlay.classList.remove('show');
     state = State.Playing;
     reset();
   }
 
+  function startStages() {
+    setMode(Mode.Stages);
+    overlay.classList.remove('show');
+    state = State.Playing;
+    reset();
+    setLevel(0);
+  }
+
+  function startGame() {
+    // Fallback used by Space/overlay click; start last selected mode
+    if (lastMode === Mode.Stages) startStages();
+    else startSurvival();
+  }
+
   function showGameOver() {
     const s = time.toFixed(1);
     const b = best.toFixed(1);
-    overlay.innerHTML = `
-      <div class="panel">
-        <h1>Game Over</h1>
-        <p class="sub">生存時間: <strong>${s}s</strong>（ベスト: <strong>${b}s</strong>）</p>
-        <button id="restartBtn">もう一度</button>
-        <p style="opacity:.8;margin-top:8px;">R または スペース でも再開できます</p>
-      </div>`;
+    overlay.innerHTML = (mode === Mode.Survival)
+      ? `<div class="panel">
+           <h1>Game Over</h1>
+           <p class="sub">生存時間: <strong>${s}s</strong>（ベスト: <strong>${b}s</strong>）</p>
+           <button id="restartBtn">もう一度</button>
+           <p style="opacity:.8;margin-top:8px;">R または スペース でも再開できます</p>
+         </div>`
+      : `<div class="panel">
+           <h1>Stage Failed</h1>
+           <p class="sub">レベル <strong>${levelIndex + 1}</strong> でやられた！</p>
+           <div style="display:flex; gap:10px;">
+             <button id="retryStageBtn">このレベルを再挑戦</button>
+             <button id="stageSelectBtn">ステージ選択へ</button>
+           </div>
+         </div>`;
     overlay.classList.add('show');
-    document.getElementById('restartBtn').addEventListener('click', () => startGame());
+    if (mode === Mode.Survival) {
+      document.getElementById('restartBtn').addEventListener('click', () => startGame());
+    } else {
+      document.getElementById('retryStageBtn').addEventListener('click', () => { overlay.classList.remove('show'); state = State.Playing; reset(); setLevel(levelIndex); });
+      document.getElementById('stageSelectBtn').addEventListener('click', () => { showStageSelect(); });
+    }
+  }
+
+  function showLevelClear() {
+    // unlock next level (store unlocked count)
+    if (levelIndex + 1 < LEVELS.length) {
+      const nextCount = levelIndex + 2; // e.g., after level 1 (idx0), unlock count=2
+      if (nextCount > unlockedLevels) {
+        unlockedLevels = nextCount;
+        localStorage.setItem(PROGRESS_KEY, String(unlockedLevels));
+      }
+    }
+    const hasNext = (levelIndex + 1 < LEVELS.length);
+    overlay.innerHTML = `<div class="panel">
+      <h1>Level ${levelIndex + 1} Clear!</h1>
+      <p class="sub">${hasNext ? '次へ進みますか？' : '全レベルクリア！'}</p>
+      <div style="display:flex; gap:10px;">
+        ${hasNext ? '<button id="nextLevelBtn">次のレベル</button>' : ''}
+        <button id="stageSelectBtn">ステージ選択</button>
+      </div>
+    </div>`;
+    overlay.classList.add('show');
+    document.getElementById('nextLevelBtn')?.addEventListener('click', () => {
+      overlay.classList.remove('show');
+      state = State.Playing; reset(); setLevel(levelIndex + 1);
+    });
+    document.getElementById('stageSelectBtn')?.addEventListener('click', () => { showStageSelect(); });
   }
 
   function togglePause() {
@@ -350,12 +560,27 @@
   function step(dt) {
     if (state !== State.Playing || paused) return;
 
-    // Difficulty scaling (gentle start, ramps to ~90s)
-    time += dt;
-    timeEl.textContent = time.toFixed(1);
-    const d = Math.min(1, time / 90);
-    spawnInterval = Math.max(0.28, 1.0 - 0.6 * d);
-    beamInterval = Math.max(2.4, 5.0 - 2.6 * d);
+    // Advance global gameplay clock for power-up durations
+    gameClock += dt;
+    if (mode === Mode.Survival) {
+      // Difficulty scaling (gentle start, ramps to ~90s)
+      time += dt;
+      timeEl.textContent = time.toFixed(1);
+      const d = Math.min(1, time / 90);
+      spawnInterval = Math.max(0.28, 1.0 - 0.6 * d);
+      beamInterval = Math.max(2.4, 5.0 - 2.6 * d);
+    } else {
+      // Stage mode uses fixed intervals and per-level weights
+      stageTimer += dt;
+      timeEl.textContent = stageTimer.toFixed(1);
+      spawnInterval = LEVELS[levelIndex].spawn;
+      beamInterval = LEVELS[levelIndex].beam;
+      if (stageTimer >= LEVELS[levelIndex].duration) {
+        state = State.Menu; // pause game updates
+        showLevelClear();
+        return;
+      }
+    }
 
     // Input
     let ix = 0, iy = 0;
@@ -364,6 +589,8 @@
     if (keys.has('KeyA') || keys.has('ArrowLeft')) ix -= 1;
     if (keys.has('KeyD') || keys.has('ArrowRight')) ix += 1;
     if (joyState.active) { ix += joyState.dx; iy += joyState.dy; }
+    const im = Math.hypot(ix, iy);
+    thrust = Math.min(1, im);
     if (ix || iy) {
       const len = Math.hypot(ix, iy) || 1;
       ix /= len; iy /= len;
@@ -376,13 +603,16 @@
     spawnTimer += dt;
     if (spawnTimer >= spawnInterval) {
       spawnTimer -= spawnInterval;
-      // Burst size scales with difficulty
-      const burst = (() => {
-        if (d < 0.25) return 1;
-        if (d < 0.6) return Math.random() < 0.35 ? 2 : 1;
-        if (d < 0.85) return Math.random() < 0.55 ? 2 : 1;
-        return Math.random() < 0.35 ? 3 : 2;
-      })();
+      // Burst size
+      const burst = (mode === Mode.Survival)
+        ? (() => {
+            const d = Math.min(1, time / 90);
+            if (d < 0.25) return 1;
+            if (d < 0.6) return Math.random() < 0.35 ? 2 : 1;
+            if (d < 0.85) return Math.random() < 0.55 ? 2 : 1;
+            return Math.random() < 0.35 ? 3 : 2;
+          })()
+        : (stageTimer < 6 ? 1 : Math.random() < 0.5 ? 2 : 1);
       for (let i = 0; i < burst; i++) spawnBullet(time);
     }
     beamTimer += dt;
@@ -401,6 +631,8 @@
     // Update bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
+      // store last position for trails
+      b.lx = b.x; b.ly = b.y;
       const k = enemyScale();
       if (b.kind === 'seeker') {
         // steer towards player
@@ -433,6 +665,21 @@
         if (b.y - b.r < 0) { b.y = b.r; b.vy = Math.abs(b.vy); bounced = true; }
         if (b.y + b.r > height) { b.y = height - b.r; b.vy = -Math.abs(b.vy); bounced = true; }
         if (bounced) { b.bounces--; if (b.bounces < 0) { bullets.splice(i, 1); continue; } }
+      } else if (b.kind === 'splitter') {
+        b.t += dt;
+        b.x += b.vx * dt * k; b.y += b.vy * dt * k;
+        if (b.t >= b.split) {
+          const ang = Math.atan2(b.vy, b.vx);
+          const sp = Math.hypot(b.vx, b.vy);
+          const s1 = ang + b.spread;
+          const s2 = ang - b.spread;
+          const speed = sp * 0.92;
+          const r = 5 * worldScale;
+          bullets.push({ kind: 'bolt', x: b.x, y: b.y, lx: b.x, ly: b.y, r, vx: Math.cos(s1) * speed, vy: Math.sin(s1) * speed, color: '#ffbf69' });
+          bullets.push({ kind: 'bolt', x: b.x, y: b.y, lx: b.x, ly: b.y, r, vx: Math.cos(s2) * speed, vy: Math.sin(s2) * speed, color: '#ffbf69' });
+          effects.push({ kind: 'burst', x: b.x, y: b.y, ttl: 0.2, r: 14 * worldScale });
+          bullets.splice(i, 1); continue;
+        }
       } else { // bolt
         b.x += b.vx * dt * k;
         b.y += b.vy * dt * k;
@@ -506,6 +753,8 @@
       // Remove out of bounds
       if (r.x < -40 || r.x > width + 40 || r.y < -40 || r.y > height + 40 || r.ttl <= 0) {
         effects.push({ kind: 'boom', x: r.x, y: r.y, ttl: 0.22, r: 40 });
+        spawnSparks(r.x, r.y, 12);
+        addShake(8);
         rockets.splice(i, 1);
         // clear nearby bullets
         for (let j = bullets.length - 1; j >= 0; j--) {
@@ -531,6 +780,8 @@
       }
       if (hit) {
         effects.push({ kind: 'boom', x: r.x, y: r.y, ttl: 0.22, r: 60 });
+        spawnSparks(r.x, r.y, 18);
+        addShake(10);
         rockets.splice(i, 1);
         // clear nearby bullets
         for (let j = bullets.length - 1; j >= 0; j--) {
@@ -543,12 +794,17 @@
     // Effects ttl
     for (let i = effects.length - 1; i >= 0; i--) {
       const e = effects[i];
+      if (e.kind === 'spark') {
+        e.x += e.vx * dt;
+        e.y += e.vy * dt;
+        e.vx *= 0.985; e.vy *= 0.985;
+      }
       e.ttl -= dt; if (e.ttl <= 0) effects.splice(i, 1);
     }
 
     // HUD updates for shield
     if (hasShield()) {
-      const left = Math.max(0, shieldUntil - time);
+      const left = Math.max(0, shieldUntil - gameClock);
       shieldLeftEl.textContent = left.toFixed(1) + 's';
     } else {
       shieldLeftEl.textContent = '-';
@@ -586,6 +842,7 @@
 
   let lastMoveAngle = 0; // radians
 
+  let thrust = 0;
   function drawShip(x, y, angle) {
     ctx.save();
     ctx.translate(x, y);
@@ -600,6 +857,22 @@
     ctx.beginPath();
     ctx.arc(-18, 0, 22, 0, Math.PI * 2);
     ctx.fill();
+
+    // Thruster plume based on input throttle
+    const L = (10 + 28 * thrust) * worldScale;
+    const W = (4 + 4 * thrust) * worldScale;
+    ctx.save();
+    const plume = ctx.createLinearGradient(-8, 0, -8 - L, 0);
+    plume.addColorStop(0, 'rgba(80,220,255,0.9)');
+    plume.addColorStop(1, 'rgba(80,220,255,0)');
+    ctx.fillStyle = plume;
+    ctx.beginPath();
+    ctx.moveTo(-8, -W/2);
+    ctx.lineTo(-8 - L, 0);
+    ctx.lineTo(-8, W/2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
 
     // Hull
     ctx.fillStyle = '#cfe9ff';
@@ -665,6 +938,25 @@
     ctx.restore();
   }
 
+  function drawLaserTrail(x1, y1, x2, y2, color) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const ang = Math.atan2(dy, dx);
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    ctx.save();
+    ctx.translate(x2, y2);
+    ctx.rotate(ang);
+    const w = Math.min(28, Math.max(8, len)) * 1.0;
+    const h = 2.5;
+    const grd = ctx.createLinearGradient(-w, 0, 0, 0);
+    grd.addColorStop(0, 'rgba(0,0,0,0)');
+    grd.addColorStop(1, color);
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = grd;
+    ctx.fillRect(-w, -h/2, w, h);
+    ctx.restore();
+  }
+
   function roundRect(x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -681,6 +973,9 @@
 
   function render() {
     ctx.clearRect(0, 0, width, height);
+    // Apply camera shake
+    ctx.save();
+    ctx.translate(shake.dx, shake.dy);
 
     // Starfield background
     ctx.save();
@@ -696,7 +991,7 @@
 
     // Shield aura (clear cyan)
     if (hasShield()) {
-      const left = Math.max(0, shieldUntil - time);
+      const left = Math.max(0, shieldUntil - gameClock);
       const pulse = 0.4 + 0.6 * Math.sin((left * 8) + player.x * 0.01);
       const outer = player.r + (12 * worldScale) + pulse * (3 * worldScale);
       const inner = player.r + (6 * worldScale);
@@ -721,6 +1016,8 @@
     // Enemy lasers
     for (const b of bullets) {
       const ang = Math.atan2(b.vy, b.vx);
+      // motion trail from last position
+      if (b.lx !== undefined) drawLaserTrail(b.lx, b.ly, b.x, b.y, b.color || '#3cff4e');
       drawLaser(b.x, b.y, ang, b.color || '#3cff4e', 18 + Math.min(10, Math.hypot(b.vx, b.vy) / 50), 4);
     }
 
@@ -760,6 +1057,40 @@
       }
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(p.x, p.y + bob, p.r, 0, Math.PI * 2); ctx.fill();
+      // Icon overlay
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1.8;
+      if (p.type === 'shield') {
+        ctx.beginPath(); ctx.arc(p.x, p.y + bob, p.r * 0.55, 0, Math.PI * 2); ctx.stroke();
+      } else if (p.type === 'bazooka') {
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.r * 0.5, p.y + bob - p.r * 0.3);
+        ctx.lineTo(p.x + p.r * 0.5, p.y + bob);
+        ctx.lineTo(p.x - p.r * 0.5, p.y + bob + p.r * 0.3);
+        ctx.closePath(); ctx.stroke();
+      } else if (p.type === 'slow') {
+        // hourglass
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.r * 0.5, p.y + bob - p.r * 0.5);
+        ctx.lineTo(p.x + p.r * 0.5, p.y + bob - p.r * 0.5);
+        ctx.lineTo(p.x - p.r * 0.5, p.y + bob + p.r * 0.5);
+        ctx.lineTo(p.x + p.r * 0.5, p.y + bob + p.r * 0.5);
+        ctx.stroke();
+      } else if (p.type === 'magnet') {
+        // U shape
+        ctx.beginPath();
+        ctx.arc(p.x, p.y + bob, p.r * 0.55, Math.PI * 0.15, Math.PI - Math.PI * 0.15);
+        ctx.stroke();
+      } else if (p.type === 'bomb') {
+        // star burst
+        for (let a = 0; a < 6; a++) {
+          const ang = (Math.PI * 2 / 6) * a;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y + bob);
+          ctx.lineTo(p.x + Math.cos(ang) * p.r * 0.6, p.y + bob + Math.sin(ang) * p.r * 0.6);
+          ctx.stroke();
+        }
+      }
       ctx.restore();
     }
 
@@ -795,8 +1126,32 @@
         g.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = g; ctx.beginPath(); ctx.arc(e.x, e.y, R, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
+      } else if (e.kind === 'spark') {
+        ctx.save();
+        const alpha = Math.max(0, e.ttl / e.life);
+        ctx.globalAlpha = 0.8 * alpha;
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = 1.6;
+        ctx.shadowBlur = 6; ctx.shadowColor = e.color;
+        ctx.beginPath();
+        ctx.moveTo(e.x, e.y);
+        ctx.lineTo(e.x - e.vx * 0.03, e.y - e.vy * 0.03);
+        ctx.stroke();
+        ctx.restore();
       }
     }
+
+    // End world (shake) scope
+    ctx.restore();
+
+    // Vignette overlay to focus center
+    ctx.save();
+    const vg = ctx.createRadialGradient(width/2, height/2, Math.min(width, height) * 0.45, width/2, height/2, Math.max(width, height) * 0.85);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
 
     // HUD pause indicator
     if (state === State.Playing && paused) {
@@ -815,6 +1170,7 @@
   function loop(now) {
     const dt = Math.min(0.033, (now - last) / 1000);
     last = now;
+    stepShake(dt);
     // Update stars regardless of state
     for (const s of stars) {
       s.y += s.v * dt;

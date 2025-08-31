@@ -12,6 +12,8 @@
     <div id="hud">
       <div class="stat"><span>TIME</span><strong id="time">0.0</strong></div>
       <div class="stat"><span>BEST</span><strong id="best">0.0</strong></div>
+      <div class="stat"><span>MODE</span><strong id="mode">SURVIVAL</strong></div>
+      <div class="stat"><span>LVL</span><strong id="level">-</strong></div>
       <div class="stat"><span>AMMO</span><strong id="ammo">0</strong></div>
       <div class="stat"><span>SHIELD</span><strong id="shieldLeft">-</strong></div>
     </div>
@@ -19,15 +21,17 @@
     <div id="overlay" class="show">
       <div class="panel">
         <h1>Galactic Dodge</h1>
-        <p class="sub">宇宙のレーザーとビームを回避して生き残れ！</p>
+        <p class="sub">モードを選択:</p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin:10px 0 14px;">
+          <button id="startSurvival">Survival（時間を競う）</button>
+          <button id="startStages">Stages（レベル制）</button>
+        </div>
         <ul class="tips">
           <li>移動: WASD / 矢印キー</li>
-          <li>攻撃（バズーカ）: スペース</li>
-          <li>モバイル: 左下スティック + 右下FIREボタン</li>
+          <li>攻撃（バズーカ）: スペース（モバイルは右下FIRE）</li>
           <li>一時停止: P</li>
-          <li>パワーアップ: 青=3秒無敵, 橙=バズーカ, 紫=スロー, 緑=マグネット, 桃=ボム</li>
+          <li>パワーアップ: 青=無敵, 橙=バズーカ, 紫=スロー, 緑=マグネット, 桃=ボム</li>
         </ul>
-        <button id="startBtn">ゲーム開始</button>
       </div>
     </div>
 
