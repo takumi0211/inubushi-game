@@ -147,6 +147,9 @@
   startBtn?.addEventListener('click', () => startSurvival());
   startSurvivalBtn?.addEventListener('click', () => startSurvival());
   startStagesBtn?.addEventListener('click', () => showStageSelect());
+  // Extra: ensure responsive on mobile where click may be flaky
+  startSurvivalBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); startSurvival(); });
+  startStagesBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); showStageSelect(); });
   // Disable background click-to-start to avoid accidental starts
   overlay.addEventListener('click', (e) => {
     // no-op; use buttons to start

@@ -43,9 +43,10 @@ body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 180ms ease;
-  z-index: 10;
+  z-index: 1000;
 }
 #overlay.show { opacity: 1; pointer-events: auto; }
+.panel button { touch-action: manipulation; pointer-events: auto; user-select: none; }
 
 .panel {
   width: min(92vw, 520px);
