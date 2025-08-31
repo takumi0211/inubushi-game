@@ -145,10 +145,48 @@
   joystick.addEventListener('touchend', (e) => { e.preventDefault(); handleJoyEnd(e); }, { passive: false });
 
   startBtn?.addEventListener('click', () => startSurvival());
-  startSurvivalBtn?.addEventListener('click', () => startSurvival());
-  startStagesBtn?.addEventListener('click', () => showStageSelect());
+  
+  // モバイル対応のイベントリスナーを追加
+  function addButtonListeners() {
+    const survivalBtn = document.getElementById('startSurvival');
+    const stagesBtn = document.getElementById('startStages');
+    
+    if (survivalBtn) {
+      survivalBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startSurvival();
+      });
+      survivalBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startSurvival();
+      });
+    }
+    
+    if (stagesBtn) {
+      stagesBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showStageSelect();
+      });
+      stagesBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showStageSelect();
+      });
+    }
+  }
+  
+  // 初期リスナー設定
+  addButtonListeners();
+  
   // Disable background click-to-start to avoid accidental starts
   overlay.addEventListener('click', (e) => {
+    // ボタンクリックの場合は何もしない
+    if (e.target.tagName === 'BUTTON') {
+      return;
+    }
     // no-op; use buttons to start
   });
 
@@ -362,32 +400,56 @@
     overlay.classList.add('show');
     overlay.querySelectorAll('button[data-level]')?.forEach(btn => {
       btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = parseInt(e.currentTarget.getAttribute('data-level'), 10);
+        overlay.classList.remove('show');
+        state = State.Playing; reset(); setLevel(idx);
+      });
+      btn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         const idx = parseInt(e.currentTarget.getAttribute('data-level'), 10);
         overlay.classList.remove('show');
         state = State.Playing; reset(); setLevel(idx);
       });
     });
-    document.getElementById('backMenu')?.addEventListener('click', () => {
-      // return to root menu (survival/stages)
-      overlay.innerHTML = `
-        <div class="panel">
-          <h1>Galactic Dodge</h1>
-          <p class="sub">モードを選択:</p>
-          <div style="display:flex; gap:12px; flex-wrap:wrap; margin:10px 0 14px;">
-            <button id="startSurvival">Survival（時間を競う）</button>
-            <button id="startStages">Stages（レベル制）</button>
-          </div>
-          <ul class="tips">
-            <li>移動: WASD / 矢印キー</li>
-            <li>攻撃（バズーカ）: スペース（モバイルは右下FIRE）</li>
-            <li>一時停止: P</li>
-            <li>パワーアップ: 青=無敵, 橙=バズーカ, 紫=スロー, 緑=マグネット, 桃=ボム</li>
-          </ul>`;
-      overlay.classList.add('show');
-      // rebind
-      document.getElementById('startSurvival')?.addEventListener('click', () => startSurvival());
-      document.getElementById('startStages')?.addEventListener('click', () => showStageSelect());
-    });
+    
+    const backBtn = document.getElementById('backMenu');
+    if (backBtn) {
+      const handleBack = () => {
+        // return to root menu (survival/stages)
+        overlay.innerHTML = `
+          <div class="panel">
+            <h1>Galactic Dodge</h1>
+            <p class="sub">モードを選択:</p>
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin:10px 0 14px;">
+              <button id="startSurvival">Survival（時間を競う）</button>
+              <button id="startStages">Stages（レベル制）</button>
+            </div>
+            <ul class="tips">
+              <li>移動: WASD / 矢印キー</li>
+              <li>攻撃（バズーカ）: スペース（モバイルは右下FIRE）</li>
+              <li>一時停止: P</li>
+              <li>パワーアップ: 青=無敵, 橙=バズーカ, 紫=スロー, 緑=マグネット, 桃=ボム</li>
+            </ul>
+          </div>`;
+        overlay.classList.add('show');
+        // rebind with improved mobile support
+        addButtonListeners();
+      };
+      
+      backBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleBack();
+      });
+      backBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleBack();
+      });
+    }
   }
 
   // Power-ups and weapons
@@ -519,10 +581,56 @@
          </div>`;
     overlay.classList.add('show');
     if (mode === Mode.Survival) {
-      document.getElementById('restartBtn').addEventListener('click', () => startGame());
+      const restartBtn = document.getElementById('restartBtn');
+      if (restartBtn) {
+        const handleRestart = () => startGame();
+        restartBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleRestart();
+        });
+        restartBtn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleRestart();
+        });
+      }
     } else {
-      document.getElementById('retryStageBtn').addEventListener('click', () => { overlay.classList.remove('show'); state = State.Playing; reset(); setLevel(levelIndex); });
-      document.getElementById('stageSelectBtn').addEventListener('click', () => { showStageSelect(); });
+      const retryBtn = document.getElementById('retryStageBtn');
+      const selectBtn = document.getElementById('stageSelectBtn');
+      
+      if (retryBtn) {
+        const handleRetry = () => { 
+          overlay.classList.remove('show'); 
+          state = State.Playing; 
+          reset(); 
+          setLevel(levelIndex); 
+        };
+        retryBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleRetry();
+        });
+        retryBtn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleRetry();
+        });
+      }
+      
+      if (selectBtn) {
+        const handleSelect = () => showStageSelect();
+        selectBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleSelect();
+        });
+        selectBtn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleSelect();
+        });
+      }
     }
   }
 
@@ -545,11 +653,41 @@
       </div>
     </div>`;
     overlay.classList.add('show');
-    document.getElementById('nextLevelBtn')?.addEventListener('click', () => {
-      overlay.classList.remove('show');
-      state = State.Playing; reset(); setLevel(levelIndex + 1);
-    });
-    document.getElementById('stageSelectBtn')?.addEventListener('click', () => { showStageSelect(); });
+    const nextBtn = document.getElementById('nextLevelBtn');
+    const stageBtn = document.getElementById('stageSelectBtn');
+    
+    if (nextBtn) {
+      const handleNext = () => {
+        overlay.classList.remove('show');
+        state = State.Playing; 
+        reset(); 
+        setLevel(levelIndex + 1);
+      };
+      nextBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleNext();
+      });
+      nextBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleNext();
+      });
+    }
+    
+    if (stageBtn) {
+      const handleStage = () => showStageSelect();
+      stageBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleStage();
+      });
+      stageBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleStage();
+      });
+    }
   }
 
   function togglePause() {
